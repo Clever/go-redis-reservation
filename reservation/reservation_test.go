@@ -69,23 +69,23 @@ func TestManagerLockCreate(t *testing.T) {
 }
 
 func TestManagerLockConcurrentRequests(t *testing.T) {
-	// Test to ensure no race conditions
+	// Test to ensure no race conditions when making many concurrent lock requests
 	manager, resourceId, conn := setUp(t)
 	defer conn.Close()
 
 	var wg sync.WaitGroup
 
-	// Make 100 requests for locks
+	// Make 100 simultaneous requests for locks
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Make the same reservation again and ensure error returned
 			_, _ = manager.Lock(resourceId)
 		}()
 	}
 	wg.Wait()
 
+	// Assert only one entry in redis
 	numKeys, err := conn.Do("DBSIZE")
 	assert.Nil(t, err)
 	assert.Equal(t, numKeys, 1, "Expected only one reservation to be made")
