@@ -35,19 +35,19 @@ func TestNewManager(t *testing.T) {
 	assert.NotNil(t, manager)
 }
 
-func setUp(t *testing.T) (*ReservationManager, string) {
+func setUp(t *testing.T) (*ReservationManager, string, redis.Conn) {
 	conn, err := redis.DialTimeout("tcp", redisTestURL, 15*time.Second, 10*time.Second, 10*time.Second)
-	defer conn.Close()
 	assert.Nil(t, err)
 	conn.Do("FLUSHALL")
 	manager, err := NewManager(redisTestURL, "test-worker")
 	assert.Nil(t, err)
 	resourceId := "12345"
-	return manager, resourceId
+	return manager, resourceId, conn
 }
 
 func TestManagerLockCreate(t *testing.T) {
-	manager, resourceId := setUp(t)
+	manager, resourceId, conn := setUp(t)
+	defer conn.Close()
 
 	// Make a new reservation
 	reservation, err := manager.Lock(resourceId)
@@ -70,12 +70,8 @@ func TestManagerLockCreate(t *testing.T) {
 
 func TestManagerLockConcurrentRequests(t *testing.T) {
 	// Test to ensure no race conditions
-
-	manager, resourceId := setUp(t)
-
-	// Make a new reservation
-	reservation, err := manager.Lock(resourceId)
-	assert.Nil(t, err)
+	manager, resourceId, conn := setUp(t)
+	defer conn.Close()
 
 	var wg sync.WaitGroup
 
@@ -85,22 +81,19 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// Make the same reservation again and ensure error returned
-			dupeReservation, err := manager.Lock(resourceId)
-			assert.Nil(t, dupeReservation)
-			assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceId))
+			_, _ = manager.Lock(resourceId)
 		}()
 	}
 	wg.Wait()
 
-	// Release the first reservation and ensure we can make a second reservation
-	err = reservation.Release()
+	numKeys, err := conn.Do("DBSIZE")
 	assert.Nil(t, err)
-	reservation, err = manager.Lock(resourceId)
-	assert.NotNil(t, reservation)
+	assert.Equal(t, numKeys, 1, "Expected only one reservation to be made")
 }
 
 func TestReservationTTL(t *testing.T) {
-	manager, resourceId := setUp(t)
+	manager, resourceId, conn := setUp(t)
+	defer conn.Close()
 
 	// This setup would never happen in production, but simulates orphaned reservations
 	// being left in redis if (for example) the process dies unexpectedly without releasing
@@ -120,7 +113,8 @@ func TestReservationTTL(t *testing.T) {
 }
 
 func TestReservationExtend(t *testing.T) {
-	manager, resourceId := setUp(t)
+	manager, resourceId, conn := setUp(t)
+	defer conn.Close()
 
 	manager.Heartbeat = 500 * time.Millisecond
 	manager.TTL = 1 * time.Second
