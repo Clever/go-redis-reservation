@@ -74,6 +74,8 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 
 	var wg sync.WaitGroup
 
+	hold := make(chan struct{})
+
 	// Make 100 simultaneous requests for locks
 	numErrors := 0
 	numReservations := 0
@@ -81,6 +83,7 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-hold // try to read from channel to block the goroutine
 			reservation, err := manager.Lock(resourceId)
 			if err != nil {
 				numErrors++
@@ -90,6 +93,7 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 			}
 		}()
 	}
+	close(hold) // close channel so all goroutines make requests at once
 	wg.Wait()
 
 	// Assert only one entry in redis and the rest errors
