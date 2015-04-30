@@ -13,7 +13,7 @@ import (
 type Reservation struct {
 	stopped     bool
 	key, source string
-	pool        *redis.Pool
+	getConn     func() redis.Conn
 	ttl         time.Duration
 }
 
@@ -80,10 +80,10 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 
 	// Make new reservation
 	res := &Reservation{
-		key:    key,
-		source: val,
-		pool:   manager.pool,
-		ttl:    manager.TTL,
+		key:     key,
+		source:  val,
+		getConn: manager.pool.Get,
+		ttl:     manager.TTL,
 	}
 
 	// Set up heartbeat in background
@@ -106,7 +106,7 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 // an `error` if not. In the event of an error, the reservation will be removed from Redis after
 // `Reservation.ttl` expires.
 func (res *Reservation) Release() error {
-	conn := res.pool.Get()
+	conn := res.getConn()
 	defer conn.Close()
 
 	_, err := redis.Int(conn.Do("DEL", res.key))
@@ -121,7 +121,7 @@ func (res *Reservation) Release() error {
 
 func (res *Reservation) heartbeat() (int, error) {
 	// Get connection
-	conn := res.pool.Get()
+	conn := res.getConn()
 	defer conn.Close()
 
 	// Check that the reservation still exists and error if we don't have it
