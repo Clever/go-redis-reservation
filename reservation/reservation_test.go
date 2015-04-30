@@ -22,7 +22,8 @@ func TestNewManager(t *testing.T) {
 
 func setUp(t *testing.T) (*Manager, string) {
 	conn, err := redis.DialTimeout("tcp", redisTestURL, 15*time.Second, 10*time.Second, 10*time.Second)
-	assert.Nil(t, err, "Could not connect to redis. Are you running redis?\nredis-server &")
+	message := fmt.Sprintf("Could not connect to redis at %s. Ensure redis is running at this location (maybe locally)?", redisTestURL)
+	assert.Nil(t, err, message)
 	defer conn.Close()
 	conn.Do("FLUSHALL")
 	manager, err := NewManager(redisTestURL, "test-worker")
