@@ -11,21 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// func dropRedisKey(t *testing.T, key string) {
-// 	conn, err := redis.Dial("tcp", redisURL)
-// 	defer conn.Close()
-// 	assert.Nil(t, err)
-// 	_, err = conn.Do("DEL", key)
-// 	assert.Nil(t, err)
-// }
-
-// func assertRedisKey(t *testing.T, key string) {
-// 	conn, err := redis.Dial("tcp", redisURL)
-// 	defer conn.Close()
-// 	assert.Nil(t, err)
-// 	_, err = conn.Do("DEL", key)
-// 	assert.Nil(t, err)
-// }
 var redisTestURL = os.Getenv("REDIS_TEST_URL")
 
 func TestNewManager(t *testing.T) {
@@ -35,42 +20,42 @@ func TestNewManager(t *testing.T) {
 	assert.NotNil(t, manager)
 }
 
-func setUp(t *testing.T) (*ReservationManager, string) {
+func setUp(t *testing.T) (*Manager, string) {
 	conn, err := redis.DialTimeout("tcp", redisTestURL, 15*time.Second, 10*time.Second, 10*time.Second)
+	assert.Nil(t, err, "Could not connect to redis. Are you running redis?\nredis-server &")
 	defer conn.Close()
-	assert.Nil(t, err)
 	conn.Do("FLUSHALL")
 	manager, err := NewManager(redisTestURL, "test-worker")
 	assert.Nil(t, err)
-	resourceId := "12345"
-	return manager, resourceId
+	resourceID := "12345"
+	return manager, resourceID
 }
 
 func TestManagerLockCreate(t *testing.T) {
-	manager, resourceId := setUp(t)
+	manager, resourceID := setUp(t)
 
 	// Make a new reservation
-	reservation, err := manager.Lock(resourceId)
+	reservation, err := manager.Lock(resourceID)
 	assert.Nil(t, err)
 
 	// Assert reservation created with correct field values
 	assert.NotNil(t, reservation)
 
 	// Make the same reservation again and ensure error returned
-	dupeReservation, err := manager.Lock(resourceId)
+	dupeReservation, err := manager.Lock(resourceID)
 	assert.Nil(t, dupeReservation)
-	assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceId))
+	assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceID))
 
 	// Release the first reservation and ensure we can make a second reservation
 	err = reservation.Release()
 	assert.Nil(t, err)
-	reservation, err = manager.Lock(resourceId)
+	reservation, err = manager.Lock(resourceID)
 	assert.NotNil(t, reservation)
 }
 
 func TestManagerLockConcurrentRequests(t *testing.T) {
 	// Test to ensure no race conditions when making many concurrent lock requests
-	manager, resourceId := setUp(t)
+	manager, resourceID := setUp(t)
 
 	var wg sync.WaitGroup
 
@@ -84,7 +69,7 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-hold // try to read from channel to block the goroutine
-			reservation, err := manager.Lock(resourceId)
+			reservation, err := manager.Lock(resourceID)
 			if err != nil {
 				numErrors++
 			}
@@ -96,13 +81,12 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 	close(hold) // close channel so all goroutines make requests at once
 	wg.Wait()
 
-	// Assert only one entry in redis and the rest errors
 	assert.Equal(t, numReservations, 1, "Expected only one reservation to be made")
 	assert.Equal(t, numErrors, 99, "Expected 99 errors")
 }
 
 func TestReservationTTL(t *testing.T) {
-	manager, resourceId := setUp(t)
+	manager, resourceID := setUp(t)
 
 	// This setup would never happen in production, but simulates orphaned reservations
 	// being left in redis if (for example) the process dies unexpectedly without releasing
@@ -111,29 +95,29 @@ func TestReservationTTL(t *testing.T) {
 	manager.TTL = 1 * time.Second
 
 	// Create a reservation
-	reservation, err := manager.Lock(resourceId)
+	reservation, err := manager.Lock(resourceID)
 	assert.Nil(t, err)
 
 	// Assert we can make a new reservation after TTL expires
 	time.Sleep(2 * time.Second)
-	reservation, err = manager.Lock(resourceId)
+	reservation, err = manager.Lock(resourceID)
 	assert.NotNil(t, reservation)
 	assert.Nil(t, err)
 }
 
 func TestReservationExtend(t *testing.T) {
-	manager, resourceId := setUp(t)
+	manager, resourceID := setUp(t)
 
 	manager.Heartbeat = 500 * time.Millisecond
 	manager.TTL = 1 * time.Second
 
 	// Create a reservation
-	reservation, err := manager.Lock(resourceId)
+	reservation, err := manager.Lock(resourceID)
 	assert.Nil(t, err)
 
 	// Assert we cannot make a new reservation because TTL has been extended
 	time.Sleep(2 * time.Second)
-	reservation, err = manager.Lock(resourceId)
+	reservation, err = manager.Lock(resourceID)
 	assert.Nil(t, reservation)
-	assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceId))
+	assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceID))
 }

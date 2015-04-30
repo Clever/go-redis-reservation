@@ -8,6 +8,8 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
+// Reservation is a type that represents a lock on a resource. At most one reservation
+// can exist for an individual resource at any time.
 type Reservation struct {
 	stopped     bool
 	key, source string
@@ -15,13 +17,19 @@ type Reservation struct {
 	ttl         time.Duration
 }
 
-type ReservationManager struct {
+// Manager is responsible for creating and extending reservations. When a Reservation
+// is created using Manager, the manager will automatically extend that Reservation
+// every `Manager.Heartbeat` time units by setting the Reservation to expire
+// after `Manager.TTL` time elapses.
+type Manager struct {
 	owner          string
 	pool           *redis.Pool
 	Heartbeat, TTL time.Duration
 }
 
-func NewManager(redisURL, owner string) (*ReservationManager, error) {
+// NewManager returns a new Manager, or an error if a connection to the supplied
+// Redis server cannot be made.
+func NewManager(redisURL, owner string) (*Manager, error) {
 	// Open redis pool
 	redisPool := redis.NewPool(func() (redis.Conn, error) {
 		return redis.DialTimeout("tcp", redisURL, 15*time.Second, 10*time.Second, 10*time.Second)
@@ -34,7 +42,7 @@ func NewManager(redisURL, owner string) (*ReservationManager, error) {
 		return nil, err
 	}
 
-	return &ReservationManager{
+	return &Manager{
 		Heartbeat: 15 * time.Minute,
 		TTL:       4 * time.Hour,
 		owner:     owner,
@@ -42,7 +50,9 @@ func NewManager(redisURL, owner string) (*ReservationManager, error) {
 	}, nil
 }
 
-func (manager *ReservationManager) Lock(resource string) (*Reservation, error) {
+// Lock creates a Reservation for `resource`, or returns an error if there already exists a
+// Reservation for that resource.
+func (manager *Manager) Lock(resource string) (*Reservation, error) {
 	// Get hostname
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -92,6 +102,9 @@ func (manager *ReservationManager) Lock(resource string) (*Reservation, error) {
 	return res, nil
 }
 
+// Release ends a lock on a resource. Release returns `nil` if release was successful or
+// an `error` if not. In the event of an error, the reservation will be removed from Redis after
+// `Reservation.ttl` expires.
 func (res *Reservation) Release() error {
 	conn := res.pool.Get()
 	defer conn.Close()
