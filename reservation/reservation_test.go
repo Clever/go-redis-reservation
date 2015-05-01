@@ -71,7 +71,8 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 			defer wg.Done()
 			<-hold // try to read from channel to block the goroutine
 			reservation, err := manager.Lock(resourceID)
-			if err != nil {
+			expectedErr := fmt.Sprintf("Reservation already exists for resource %s", resourceID)
+			if err != nil && err.Error() == expectedErr {
 				numErrors++
 			}
 			if reservation != nil {
