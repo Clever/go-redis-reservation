@@ -39,7 +39,7 @@ func NewManager(redisURL, owner string) (*Manager, error) {
 	conn := redisPool.Get()
 	defer conn.Close()
 	if _, err := conn.Do("PING"); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Error connecting to redis: %s", err)
 	}
 
 	return &Manager{
