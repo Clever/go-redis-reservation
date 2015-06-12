@@ -93,8 +93,12 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 				break
 			}
 			// Panic if err; no way to handle the error gracefully when this runs in the background
-			if _, err := res.heartbeat(); err != nil {
+			success, err := res.heartbeat()
+			if err != nil {
 				panic(err)
+			}
+			if success != 1 {
+				panic(fmt.Errorf("Got code %d when attempting to extend reservation", success))
 			}
 		}
 	}()
@@ -135,7 +139,7 @@ func (res *Reservation) heartbeat() (int, error) {
 
 	// Extend reservation
 	success, err := redis.Int(conn.Do("EXPIRE", res.key, res.ttl.Seconds()))
-	if err != nil || success != 1 {
+	if err != nil {
 		return -1, fmt.Errorf("Could not extend reservation %s: ERR %s", res.key, err.Error())
 	}
 	return success, nil
