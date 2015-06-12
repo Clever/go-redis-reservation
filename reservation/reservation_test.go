@@ -32,6 +32,21 @@ func setUp(t *testing.T) (*Manager, string) {
 	return manager, resourceID
 }
 
+func TestSourceExposed(t *testing.T) {
+	manager, resourceID := setUp(t)
+
+	// Create a reservation
+	reservation, err := manager.Lock(resourceID)
+	assert.Nil(t, err)
+
+	hostname, err := os.Hostname()
+	assert.Nil(t, err)
+
+	expectedKeySubstr := fmt.Sprintf("%s-%s", hostname, manager.owner)
+	// Assert we can access the reservation value
+	assert.Contains(t, reservation.Source, expectedKeySubstr)
+}
+
 func TestManagerLockCreate(t *testing.T) {
 	manager, resourceID := setUp(t)
 
