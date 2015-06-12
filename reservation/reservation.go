@@ -12,7 +12,7 @@ import (
 // can exist for an individual resource at any time.
 type Reservation struct {
 	stopped     bool
-	key, source string
+	key, Source string
 	getConn     func() redis.Conn
 	ttl         time.Duration
 }
@@ -81,7 +81,7 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 	// Make new reservation
 	res := &Reservation{
 		key:     key,
-		source:  val,
+		Source:  val,
 		getConn: manager.pool.Get,
 		ttl:     manager.TTL,
 	}
@@ -93,8 +93,12 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 				break
 			}
 			// Panic if err; no way to handle the error gracefully when this runs in the background
-			if _, err := res.heartbeat(); err != nil {
+			success, err := res.heartbeat()
+			if err != nil {
 				panic(err)
+			}
+			if success != 1 {
+				panic(fmt.Errorf("Got code %d when attempting to extend reservation", success))
 			}
 		}
 	}()
@@ -129,13 +133,13 @@ func (res *Reservation) heartbeat() (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("Could not fetch owner of reservation %s: ERR %s", res.key, err.Error())
 	}
-	if source != res.source {
+	if source != res.Source {
 		return -1, fmt.Errorf("Reservation for %s has unknown owner %s", res.key, source)
 	}
 
 	// Extend reservation
 	success, err := redis.Int(conn.Do("EXPIRE", res.key, res.ttl.Seconds()))
-	if err != nil || success != 1 {
+	if err != nil {
 		return -1, fmt.Errorf("Could not extend reservation %s: ERR %s", res.key, err.Error())
 	}
 	return success, nil
