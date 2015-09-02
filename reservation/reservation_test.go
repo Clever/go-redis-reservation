@@ -122,6 +122,28 @@ func TestReservationTTL(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestReservationWaitUntilLock(t *testing.T) {
+	manager, resourceID := setUp(t)
+
+	// Create a reservation and hold it for a little while
+	go func() {
+		reservation, err := manager.Lock(resourceID)
+		assert.Nil(t, err)
+		time.Sleep(5 * time.Second)
+		reservation.Release()
+	}()
+
+	// Assert that the reservation is currently held, and we can't get it
+	time.Sleep(time.Second)
+	_, err := manager.Lock(resourceID)
+	assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceID))
+
+	// Now wait for the reservation, and assert that we get it eventually
+	waitingReservation, err := manager.WaitUntilLock(resourceID)
+	assert.NoError(t, err)
+	assert.NotNil(t, waitingReservation)
+}
+
 func TestReservationExtend(t *testing.T) {
 	manager, resourceID := setUp(t)
 
