@@ -106,6 +106,22 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 	return res, nil
 }
 
+// WaitUntilLock creates a Reservation for `resource`, or waits until it can do so.
+func (manager *Manager) WaitUntilLock(resource string) (*Reservation, error) {
+	reservationAlreadyExists := func(err error) bool {
+		return fmt.Sprintf("%s", err) == fmt.Sprintf("Reservation already exists for resource %s", resource)
+	}
+
+	res, err := manager.Lock(resource)
+	for reservationAlreadyExists(err) {
+		fmt.Printf("RESERVE: Attempting to reserve %s\n", resource)
+		time.Sleep(time.Second)
+		res, err = manager.Lock(resource)
+	}
+	fmt.Printf("RESERVE: Done waiting for resource. reserve_state: %t\n", err == nil)
+	return res, err
+}
+
 // Release ends a lock on a resource. Release returns `nil` if release was successful or
 // an `error` if not. In the event of an error, the reservation will be removed from Redis after
 // `Reservation.ttl` expires.
