@@ -109,10 +109,12 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 // WaitUntilLock creates a Reservation for `resource`, or waits until it can do so.
 func (manager *Manager) WaitUntilLock(resource string) (*Reservation, error) {
 	res, err := manager.Lock(resource)
-	for err != nil && err.Error() == fmt.Sprintf("Reservation already exists for resource %s", resource) {
+	for fmt.Sprintf("%s", err) == fmt.Sprintf("Reservation already exists for resource %s", resource) {
+		fmt.Printf("RESERVE: Attempting to reserve %s\n", resource)
 		time.Sleep(time.Second)
 		res, err = manager.Lock(resource)
 	}
+	fmt.Printf("RESERVE: Done waiting for resource. reserve_state: %t\n", err == nil)
 	return res, err
 }
 
