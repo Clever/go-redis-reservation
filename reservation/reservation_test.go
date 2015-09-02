@@ -78,7 +78,8 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 	hold := make(chan struct{})
 
 	// Make 100 simultaneous requests for locks
-	numErrors := 0
+	numReservationExistsErrors := 0
+	numOtherErrors := 0
 	numReservations := 0
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -87,8 +88,11 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 			<-hold // try to read from channel to block the goroutine
 			reservation, err := manager.Lock(resourceID)
 			expectedErr := fmt.Sprintf("Reservation already exists for resource %s", resourceID)
-			if err != nil && err.Error() == expectedErr {
-				numErrors++
+			if fmt.Sprintf("%s", err) == expectedErr {
+				numReservationExistsErrors++
+			} else if err != nil {
+				fmt.Println("Other error: %s", err)
+				numOtherErrors++
 			}
 			if reservation != nil {
 				numReservations++
@@ -99,7 +103,7 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, numReservations, 1, "Expected only one reservation to be made")
-	assert.Equal(t, numErrors, 99, "Expected 99 errors")
+	assert.Equal(t, numOtherErrors+numReservationExistsErrors, 99, "Expected 99 errors")
 }
 
 func TestReservationTTL(t *testing.T) {
@@ -124,17 +128,19 @@ func TestReservationTTL(t *testing.T) {
 
 func TestReservationWaitUntilLock(t *testing.T) {
 	manager, resourceID := setUp(t)
+	c := make(chan interface{})
 
 	// Create a reservation and hold it for a little while
 	go func() {
 		reservation, err := manager.Lock(resourceID)
 		assert.Nil(t, err)
+		close(c)
 		time.Sleep(5 * time.Second)
 		reservation.Release()
 	}()
 
 	// Assert that the reservation is currently held, and we can't get it
-	time.Sleep(time.Second)
+	<-c
 	_, err := manager.Lock(resourceID)
 	assert.EqualError(t, err, fmt.Sprintf("Reservation already exists for resource %s", resourceID))
 
