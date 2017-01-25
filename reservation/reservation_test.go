@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -78,9 +79,11 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 	hold := make(chan struct{})
 
 	// Make 100 simultaneous requests for locks
-	numReservationExistsErrors := 0
-	numOtherErrors := 0
-	numReservations := 0
+	var (
+		numReservationExistsErrors int32
+		numOtherErrors             int32
+		numReservations            int32
+	)
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
@@ -89,21 +92,21 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 			reservation, err := manager.Lock(resourceID)
 			expectedErr := fmt.Sprintf("Reservation already exists for resource %s", resourceID)
 			if fmt.Sprintf("%s", err) == expectedErr {
-				numReservationExistsErrors++
+				atomic.AddInt32(&numReservationExistsErrors, 1)
 			} else if err != nil {
-				fmt.Println("Other error: %s", err)
-				numOtherErrors++
+				fmt.Printf("Other error: %s", err)
+				atomic.AddInt32(&numOtherErrors, 1)
 			}
 			if reservation != nil {
-				numReservations++
+				atomic.AddInt32(&numReservations, 1)
 			}
 		}()
 	}
 	close(hold) // close channel so all goroutines make requests at once
 	wg.Wait()
 
-	assert.Equal(t, numReservations, 1, "Expected only one reservation to be made")
-	assert.Equal(t, numOtherErrors+numReservationExistsErrors, 99, "Expected 99 errors")
+	assert.Equal(t, numReservations, int32(1), "Expected only one reservation to be made")
+	assert.Equal(t, numOtherErrors+numReservationExistsErrors, int32(99), "Expected 99 errors")
 }
 
 func TestReservationTTL(t *testing.T) {
