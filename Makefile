@@ -1,20 +1,17 @@
+include golang.mk
+.DEFAULT_GOAL := test # override default goal set in library makefile
+
+.PHONY: test $(PKGS)
 SHELL := /bin/bash
-.PHONY: $(PKG)
+PKGS = $(shell go list ./...)
+$(eval $(call golang-version-check,1.7))
 
-PKG := github.com/Clever/go-redis-reservation/reservation
 
-REDIS_TEST_URL ?= localhost:6379
+export _DEPLOY_ENV=testing
+export REDIS_TEST_URL ?= localhost:6379
 
-$(GOPATH)/bin/golint:
-	@go get github.com/golang/lint/golint
+test: $(PKGS)
 
-$(PKG): $(GOPATH)/bin/golint
-	go get -d -t $@
-	gofmt -w=true $(GOPATH)/src/$@/*.go
-	@echo ""
-	@echo "LINTING $@..."
-	$(GOPATH)/bin/golint $(GOPATH)/src/$@/*.go
-	@echo "TESTING $@..."
-	REDIS_TEST_URL=$(REDIS_TEST_URL) go test -v $@
-
-test: $(PKG)
+$(PKGS): golang-test-all-strict-deps
+	@go get -d -t $@
+	$(call golang-test-all-strict,$@)

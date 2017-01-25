@@ -91,7 +91,7 @@ func TestManagerLockConcurrentRequests(t *testing.T) {
 			if fmt.Sprintf("%s", err) == expectedErr {
 				numReservationExistsErrors++
 			} else if err != nil {
-				fmt.Println("Other error: %s", err)
+				fmt.Printf("Other error: %s", err)
 				numOtherErrors++
 			}
 			if reservation != nil {
