@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
+	"gopkg.in/Clever/kayvee-go.v6/logger"
 )
 
 // Reservation is a type that represents a lock on a resource. At most one reservation
@@ -25,6 +26,7 @@ type Manager struct {
 	owner          string
 	pool           *redis.Pool
 	Heartbeat, TTL time.Duration
+	lg             logger.KayveeLogger
 }
 
 func redisKey(resource string) string {
@@ -74,9 +76,11 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 		"EX", manager.TTL.Seconds(),
 		"NX")
 	if err != nil {
+		manager.lg.ErrorD("redis-error", logger.M{"key": key, "resource": resource, "err": err.Error()})
 		return nil, fmt.Errorf("Error with SET command: %s", err.Error())
 	}
 	if success == nil {
+		manager.lg.InfoD("reservation-exists", logger.M{"key": key, "resource": resource})
 		return nil, fmt.Errorf("Reservation already exists for resource %s", resource)
 	}
 
@@ -95,7 +99,7 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 				break
 			}
 			// Panic if err; no way to handle the error gracefully when this runs in the background
-			success, err := res.heartbeat()
+			success, err := res.heartbeat(manager.lg)
 			if err != nil {
 				panic(err)
 			}
@@ -116,11 +120,15 @@ func (manager *Manager) WaitUntilLock(resource string) (*Reservation, error) {
 
 	res, err := manager.Lock(resource)
 	for reservationAlreadyExists(err) {
-		fmt.Printf("RESERVE: Attempting to reserve %s\n", resource)
+		manager.lg.InfoD("reservation-attempted", logger.M{
+			"key":      redisKey(resource),
+			"resource": resource})
 		time.Sleep(time.Second)
 		res, err = manager.Lock(resource)
 	}
-	fmt.Printf("RESERVE: Done waiting for resource. reserve_state: %t\n", err == nil)
+	if err == nil {
+		manager.lg.InfoD("reservation-acquired", logger.M{"key": res.key, "resource": resource})
+	}
 	return res, err
 }
 
@@ -141,7 +149,7 @@ func (res *Reservation) Release() error {
 	return nil
 }
 
-func (res *Reservation) heartbeat() (int, error) {
+func (res *Reservation) heartbeat(lg logger.KayveeLogger) (int, error) {
 	// Get connection
 	conn := res.getConn()
 	defer conn.Close()
@@ -160,5 +168,11 @@ func (res *Reservation) heartbeat() (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("Could not extend reservation %s: ERR %s", res.key, err.Error())
 	}
+	lg.InfoD("reservation-extended", logger.M{
+		"key":      res.key,
+		"val":      res.Source,
+		"duration": res.ttl.String(),
+	})
+
 	return success, nil
 }
