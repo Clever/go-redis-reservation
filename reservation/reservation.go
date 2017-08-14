@@ -12,10 +12,10 @@ import (
 // Reservation is a type that represents a lock on a resource. At most one reservation
 // can exist for an individual resource at any time.
 type Reservation struct {
-	stopped     bool
-	key, Source string
-	getConn     func() redis.Conn
-	ttl         time.Duration
+	stopped    bool
+	key, value string
+	getConn    func() redis.Conn
+	ttl        time.Duration
 }
 
 // Manager is responsible for creating and extending reservations. When a Reservation
@@ -87,7 +87,7 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 	// Make new reservation
 	res := &Reservation{
 		key:     key,
-		Source:  val,
+		value:   val,
 		getConn: manager.pool.Get,
 		ttl:     manager.TTL,
 	}
@@ -155,12 +155,12 @@ func (res *Reservation) heartbeat(lg logger.KayveeLogger) (int, error) {
 	defer conn.Close()
 
 	// Check that the reservation still exists and error if we don't have it
-	source, err := redis.String(conn.Do("GET", res.key))
+	resValue, err := redis.String(conn.Do("GET", res.key))
 	if err != nil {
 		return -1, fmt.Errorf("Could not fetch owner of reservation %s: ERR %s", res.key, err.Error())
 	}
-	if source != res.Source {
-		return -1, fmt.Errorf("Reservation for %s has unknown owner %s", res.key, source)
+	if resValue != res.value {
+		return -1, fmt.Errorf("Reservation for %s has unknown owner %s", res.key, resValue)
 	}
 
 	// Extend reservation
@@ -170,7 +170,7 @@ func (res *Reservation) heartbeat(lg logger.KayveeLogger) (int, error) {
 	}
 	lg.InfoD("reservation-extended", logger.M{
 		"key":      res.key,
-		"val":      res.Source,
+		"val":      res.value,
 		"duration": res.ttl.String(),
 	})
 

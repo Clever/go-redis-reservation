@@ -45,8 +45,8 @@ func TestSourceExposed(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Assert we can access the reservation value
-	assert.Contains(t, reservation.Source, testWorkerName)
-	assert.Contains(t, reservation.Source, os.Getenv("JOB_ID"))
+	assert.Contains(t, reservation.value, testWorkerName)
+	assert.Contains(t, reservation.value, os.Getenv("JOB_ID"))
 }
 
 func TestManagerLockCreate(t *testing.T) {
