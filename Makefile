@@ -9,6 +9,7 @@ $(eval $(call golang-version-check,1.8))
 
 export _DEPLOY_ENV=testing
 export REDIS_TEST_URL ?= localhost:6379
+export JOB_ID=123
 
 test: $(PKGS)
 

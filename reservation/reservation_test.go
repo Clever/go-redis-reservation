@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const (
+	testWorkerName = "test-worker"
+)
+
 var redisTestURL = os.Getenv("REDIS_TEST_URL")
 
 func TestNewManager(t *testing.T) {
@@ -27,7 +31,7 @@ func setUp(t *testing.T) (*Manager, string) {
 	assert.Nil(t, err, message)
 	defer conn.Close()
 	conn.Do("FLUSHALL")
-	manager, err := NewManager(redisTestURL, "test-worker")
+	manager, err := NewManager(redisTestURL, testWorkerName)
 	assert.Nil(t, err)
 	resourceID := "12345"
 	return manager, resourceID
@@ -40,12 +44,9 @@ func TestSourceExposed(t *testing.T) {
 	reservation, err := manager.Lock(resourceID)
 	assert.Nil(t, err)
 
-	hostname, err := os.Hostname()
-	assert.Nil(t, err)
-
-	expectedKeySubstr := fmt.Sprintf("%s-%s", hostname, manager.owner)
 	// Assert we can access the reservation value
-	assert.Contains(t, reservation.Source, expectedKeySubstr)
+	assert.Contains(t, reservation.Source, testWorkerName)
+	assert.Contains(t, reservation.Source, os.Getenv("JOB_ID"))
 }
 
 func TestManagerLockCreate(t *testing.T) {

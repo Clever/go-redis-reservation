@@ -27,6 +27,10 @@ type Manager struct {
 	Heartbeat, TTL time.Duration
 }
 
+func redisKey(resource string) string {
+	return fmt.Sprintf("reservation-%s", resource)
+}
+
 // NewManager returns a new Manager, or an error if a connection to the supplied
 // Redis server cannot be made.
 func NewManager(redisURL, owner string) (*Manager, error) {
@@ -47,20 +51,18 @@ func NewManager(redisURL, owner string) (*Manager, error) {
 		TTL:       4 * time.Hour,
 		owner:     owner,
 		pool:      redisPool,
+		lg: logger.NewWithContext(owner, logger.M{
+			"via":    "go-redis-reservation",
+			"job_id": os.Getenv("JOB_ID"),
+		}),
 	}, nil
 }
 
 // Lock creates a Reservation for `resource`, or returns an error if there already exists a
 // Reservation for that resource.
 func (manager *Manager) Lock(resource string) (*Reservation, error) {
-	// Get hostname
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, err
-	}
-
-	key := fmt.Sprintf("reservation-%s", resource)
-	val := fmt.Sprintf("%s-%s-%d", hostname, manager.owner, os.Getpid())
+	key := redisKey(resource)
+	val := fmt.Sprintf("%s-%s", manager.owner, os.Getenv("JOB_ID"))
 
 	// Get connection
 	conn := manager.pool.Get()
