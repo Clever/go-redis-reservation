@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
+	"gopkg.in/Clever/kayvee-go.v6/logger"
 )
 
 // Reservation is a type that represents a lock on a resource. At most one reservation
 // can exist for an individual resource at any time.
 type Reservation struct {
-	stopped     bool
-	key, Source string
-	getConn     func() redis.Conn
-	ttl         time.Duration
+	stopped    bool
+	key, value string
+	getConn    func() redis.Conn
+	ttl        time.Duration
 }
 
 // Manager is responsible for creating and extending reservations. When a Reservation
@@ -25,6 +26,11 @@ type Manager struct {
 	owner          string
 	pool           *redis.Pool
 	Heartbeat, TTL time.Duration
+	lg             logger.KayveeLogger
+}
+
+func redisKey(resource string) string {
+	return fmt.Sprintf("reservation-%s", resource)
 }
 
 // NewManager returns a new Manager, or an error if a connection to the supplied
@@ -47,20 +53,18 @@ func NewManager(redisURL, owner string) (*Manager, error) {
 		TTL:       4 * time.Hour,
 		owner:     owner,
 		pool:      redisPool,
+		lg: logger.NewWithContext(owner, logger.M{
+			"via":    "go-redis-reservation",
+			"job_id": os.Getenv("JOB_ID"),
+		}),
 	}, nil
 }
 
 // Lock creates a Reservation for `resource`, or returns an error if there already exists a
 // Reservation for that resource.
 func (manager *Manager) Lock(resource string) (*Reservation, error) {
-	// Get hostname
-	hostname, err := os.Hostname()
-	if err != nil {
-		return nil, err
-	}
-
-	key := fmt.Sprintf("reservation-%s", resource)
-	val := fmt.Sprintf("%s-%s-%d", hostname, manager.owner, os.Getpid())
+	key := redisKey(resource)
+	val := fmt.Sprintf("%s-%s", manager.owner, os.Getenv("JOB_ID"))
 
 	// Get connection
 	conn := manager.pool.Get()
@@ -72,16 +76,18 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 		"EX", manager.TTL.Seconds(),
 		"NX")
 	if err != nil {
+		manager.lg.ErrorD("redis-error", logger.M{"key": key, "resource": resource, "err": err.Error()})
 		return nil, fmt.Errorf("Error with SET command: %s", err.Error())
 	}
 	if success == nil {
+		manager.lg.InfoD("reservation-exists", logger.M{"key": key, "resource": resource})
 		return nil, fmt.Errorf("Reservation already exists for resource %s", resource)
 	}
 
 	// Make new reservation
 	res := &Reservation{
 		key:     key,
-		Source:  val,
+		value:   val,
 		getConn: manager.pool.Get,
 		ttl:     manager.TTL,
 	}
@@ -93,7 +99,7 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 				break
 			}
 			// Panic if err; no way to handle the error gracefully when this runs in the background
-			success, err := res.heartbeat()
+			success, err := res.heartbeat(manager.lg)
 			if err != nil {
 				panic(err)
 			}
@@ -114,11 +120,15 @@ func (manager *Manager) WaitUntilLock(resource string) (*Reservation, error) {
 
 	res, err := manager.Lock(resource)
 	for reservationAlreadyExists(err) {
-		fmt.Printf("RESERVE: Attempting to reserve %s\n", resource)
+		manager.lg.InfoD("reservation-attempted", logger.M{
+			"key":      redisKey(resource),
+			"resource": resource})
 		time.Sleep(time.Second)
 		res, err = manager.Lock(resource)
 	}
-	fmt.Printf("RESERVE: Done waiting for resource. reserve_state: %t\n", err == nil)
+	if err == nil {
+		manager.lg.InfoD("reservation-acquired", logger.M{"key": res.key, "resource": resource})
+	}
 	return res, err
 }
 
@@ -139,18 +149,18 @@ func (res *Reservation) Release() error {
 	return nil
 }
 
-func (res *Reservation) heartbeat() (int, error) {
+func (res *Reservation) heartbeat(lg logger.KayveeLogger) (int, error) {
 	// Get connection
 	conn := res.getConn()
 	defer conn.Close()
 
 	// Check that the reservation still exists and error if we don't have it
-	source, err := redis.String(conn.Do("GET", res.key))
+	resValue, err := redis.String(conn.Do("GET", res.key))
 	if err != nil {
 		return -1, fmt.Errorf("Could not fetch owner of reservation %s: ERR %s", res.key, err.Error())
 	}
-	if source != res.Source {
-		return -1, fmt.Errorf("Reservation for %s has unknown owner %s", res.key, source)
+	if resValue != res.value {
+		return -1, fmt.Errorf("Reservation for %s has unknown owner %s", res.key, resValue)
 	}
 
 	// Extend reservation
@@ -158,5 +168,11 @@ func (res *Reservation) heartbeat() (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("Could not extend reservation %s: ERR %s", res.key, err.Error())
 	}
+	lg.InfoD("reservation-extended", logger.M{
+		"key":      res.key,
+		"val":      res.value,
+		"duration": res.ttl.String(),
+	})
+
 	return success, nil
 }
