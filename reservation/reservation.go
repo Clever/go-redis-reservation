@@ -149,14 +149,14 @@ func (res *Reservation) Release() error {
 
 	if err != nil {
 		res.lg.ErrorD("reservation-failed-to-release", logger.M{
-			"key":   res.key,
-			"value": res.Value})
+			"key":               res.key,
+			"reservation-value": res.Value})
 		return fmt.Errorf("Error deleting reservation key for %s: %s", res.key, err.Error())
 	}
 
 	res.lg.InfoD("reservation-released", logger.M{
-		"key":   res.key,
-		"value": res.Value})
+		"key":               res.key,
+		"reservation-value": res.Value})
 	return nil
 }
 
