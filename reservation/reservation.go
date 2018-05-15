@@ -98,7 +98,7 @@ func (manager *Manager) Lock(resource string) (*Reservation, error) {
 
 	// Set up heartbeat in background
 	go func() {
-		for _ = range time.Tick(manager.Heartbeat) {
+		for range time.Tick(manager.Heartbeat) {
 			if res.stopped {
 				break
 			}
