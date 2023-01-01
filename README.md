@@ -29,3 +29,4 @@ The tests depend on a local redis instance. Run
   redis-server &
   make test
 ```
+test
