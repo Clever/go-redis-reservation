@@ -4,7 +4,7 @@ include golang.mk
 .PHONY: test $(PKGS)
 SHELL := /bin/bash
 PKGS = $(shell go list ./... | grep -v /vendor)
-$(eval $(call golang-version-check,1.21))
+$(eval $(call golang-version-check,1.24))
 
 export _DEPLOY_ENV=testing
 export REDIS_TEST_URL ?= localhost:6379
