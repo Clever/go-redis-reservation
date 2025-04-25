@@ -1,6 +1,6 @@
 module github.com/Clever/go-redis-reservation
 
-go 1.21
+go 1.24
 
 require (
 	github.com/garyburd/redigo v1.3.0
